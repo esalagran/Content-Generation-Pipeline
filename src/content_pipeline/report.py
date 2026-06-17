@@ -36,10 +36,10 @@ def verdict_map(log: EvalLog) -> dict[tuple[str, str], str]:
     out: dict[tuple[str, str], str] = {}
     for sample in log.samples or []:
         score = (sample.scores or {}).get("faithfulness")
-        if not score:
+        if not score or not score.metadata:
             continue
         for v in score.metadata["verdicts"]:
-            out[(sample.id, v["claim"])] = v["verdict"]
+            out[(str(sample.id), v["claim"])] = v["verdict"]
     return out
 
 

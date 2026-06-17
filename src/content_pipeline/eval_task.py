@@ -92,7 +92,7 @@ def detection_rate(check_name: str):
     def compute(scores: list[SampleScore]) -> float:
         relevant = [
             s for s in scores
-            if check_name in (s.sample_metadata.get("expect_deterministic") or [])
+            if check_name in ((s.sample_metadata or {}).get("expect_deterministic") or [])
         ]
         return sum(_fired(s) for s in relevant) / len(relevant) if relevant else 0.0
 
@@ -104,7 +104,7 @@ def false_positive_rate():
     """Among good samples, the fraction this check wrongly fired on (1 - precision)."""
 
     def compute(scores: list[SampleScore]) -> float:
-        good = [s for s in scores if s.sample_metadata.get("label") == "good"]
+        good = [s for s in scores if (s.sample_metadata or {}).get("label") == "good"]
         return sum(_fired(s) for s in good) / len(good) if good else 0.0
 
     return compute
