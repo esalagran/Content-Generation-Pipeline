@@ -1,32 +1,32 @@
 {
-  "hero_headline": "Cosy stone cottage for two in the Cotswolds countryside",
+  "hero_headline": "Cosy Stone Cottage for Two in the Cotswolds Countryside",
   "highlights": [
     {
-      "text": "Charming one-bedroom cottage in Stow-on-the-Wold",
-      "source_field": "location"
-    },
-    {
-      "text": "Intimate retreat perfect for couples",
+      "text": "A peaceful one-bedroom retreat perfectly sized for two guests.",
       "source_field": "rental_info"
     },
     {
-      "text": "Traditional fireplace for cosy evenings",
+      "text": "Nestled in the Cotswolds countryside near Stow-on-the-Wold.",
+      "source_field": "location"
+    },
+    {
+      "text": "Warm up beside a classic fireplace after a day of exploring.",
       "source_field": "amenities"
     },
     {
-      "text": "Peaceful Cotswolds countryside setting",
-      "source_field": "description"
+      "text": "Stay connected with broadband internet throughout your stay.",
+      "source_field": "amenities"
     }
   ],
-  "about_section": "Briar Cottage is a cosy stone cottage nestled in the Cotswolds countryside, located in Stow-on-the-Wold, United Kingdom. This quiet one-bedroom retreat accommodates 2 guests and features 1 bedroom and 1 bathroom. The cottage offers a warm fireplace and broadband internet, combining traditional charm with modern connectivity for a comfortable countryside escape.",
+  "about_section": "Briar Cottage is a cosy stone cottage for two, set in the Cotswolds countryside near Stow-on-the-Wold, United Kingdom. The one-bedroom, one-bathroom cottage offers a quiet and intimate escape. Check-in is from 4 PM and check-out by 10 AM.",
   "amenity_descriptions": [
     {
       "code": "Fireplace",
-      "text": "A traditional fireplace creates a warm and inviting atmosphere for relaxing evenings."
+      "text": "A fireplace provides a warm and inviting focal point for cosy evenings indoors."
     },
     {
       "code": "InternetBroadband",
-      "text": "Broadband internet access keeps you connected throughout your stay."
+      "text": "Broadband internet keeps you connected throughout your stay."
     }
   ]
 }

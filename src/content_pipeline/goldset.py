@@ -4,14 +4,17 @@ Each entry is a claim drawn from a committed run, labeled by a human (me) as
 grounded (`supported=True`) or not. The notebook looks up the judge's verdict for
 the same claim in the committed .eval log and builds a confusion matrix.
 
+Agreement is reported as Cohen's kappa + TPR/TNR (not raw agreement, which is
+misleading under class imbalance) in report.py.
+
 HONEST LIMITATIONS (do not over-read these numbers):
-- n is tiny (a demonstration, not a significant estimate). With ~13 claims the
+- n is tiny (a demonstration, not a significant estimate). With ~12 claims the
   confidence interval is very wide; treat this as methodology that scales to
-  hundreds, not a trustworthy point estimate.
+  hundreds, not a trustworthy point estimate (kappa included — its CI is huge here).
 - Single annotator (me, who also wrote the judge prompt) => no inter-annotator
   agreement and built-in bias.
 - The labels validate the judge's *verdict*, not the upstream claim
-  *decomposition* (assumed correct; spot-checked only).
+  *decomposition* (validated separately in tests/test_decomposition.py).
 
 `claim` strings must match the logged claim text exactly (lookup is by text).
 """
@@ -32,19 +35,24 @@ class GoldLabel:
 
 GOLD: list[GoldLabel] = [
     # --- supported claims (human=True) from real generations + good fixtures ---
+    # NOTE: the "generation"-source claim texts below were re-derived from the
+    # committed claude-sonnet-4-6 run (they must match the logged text verbatim).
     GoldLabel("generation", "villa",
-              "Three-bedroom villa sleeping up to 6 guests with 2 bathrooms", True),
-    GoldLabel("generation", "villa", "Rated 4.96 out of 5 by 87 guests", True),
-    GoldLabel("generation", "villa", "Ten-minute walk to the old town", True,
-              "grounded in a guest review"),
+              "Sleeps up to 6 guests across 3 bedrooms and 2 bathrooms.", True),
+    GoldLabel("generation", "villa", "Rated 4.96 out of 5 across 87 guest reviews.", True),
     GoldLabel("generation", "cottage",
-              "Broadband internet access keeps you connected throughout your stay.", True),
+              "Broadband internet keeps you connected throughout your stay.", True),
     GoldLabel("meta", "good_villa", "Three bedrooms sleeping up to six guests", True),
     GoldLabel("meta", "good_villa", "Rated 4.96 across 87 guest reviews", True),
-    # judge over-flags these legitimate claims -> expected human/judge disagreement:
+    # judge over-flags these legitimate claims -> expected human/judge disagreement.
+    # The amenity IS in the input list; the judge marks the descriptive flourish
+    # 'unsupported' because the embellishment isn't literally in the corpus.
     GoldLabel("generation", "villa",
-              "Stay connected with high-speed broadband internet access throughout the property.",
-              True, "broadband IS in amenities; 'high-speed' is mild puffery"),
+              "Enjoy your own private pool, perfect for cooling off in the Spanish sun.",
+              True, "PrivatePool is in amenities; the flourish is over-flagged"),
+    GoldLabel("generation", "cottage",
+              "Warm up beside a classic fireplace after a day of exploring.",
+              True, "Fireplace is in amenities; the flourish is over-flagged"),
     GoldLabel("meta", "good_villa", "Air conditioning throughout for warm summers.", True,
               "AC is in amenities and praised in a review"),
 
@@ -57,6 +65,4 @@ GOLD: list[GoldLabel] = [
               "Five bedrooms sleeping up to twelve guests", False, "contradicts rental_info"),
     GoldLabel("meta", "bad_unlisted_amenity", "A private helipad on site.", False,
               "injection attempt in a review; not a real fact"),
-    GoldLabel("meta", "good_cottage", "A wood-burning fireplace.", False,
-              "'wood-burning' detail not in data"),
 ]

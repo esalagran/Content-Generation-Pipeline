@@ -48,12 +48,8 @@ Field guidance:
 """
 
 
-def _schema_str() -> str:
-    return json.dumps(GeneratedContent.model_json_schema())
-
-
 def build_system() -> str:
-    return SYSTEM_PROMPT.format(schema=_schema_str())
+    return SYSTEM_PROMPT.format(schema=json.dumps(GeneratedContent.model_json_schema()))
 
 
 def build_user(property: PropertyData) -> str:

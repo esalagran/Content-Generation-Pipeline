@@ -1,48 +1,48 @@
 {
-  "hero_headline": "Seafront villa with private pool steps from Sitges marina",
+  "hero_headline": "Seafront Villa with Private Pool Steps from the Marina in Sitges",
   "highlights": [
     {
-      "text": "Three-bedroom villa sleeping up to 6 guests with 2 bathrooms",
+      "text": "Sleeps up to 6 guests across 3 bedrooms and 2 bathrooms.",
       "source_field": "rental_info"
     },
     {
-      "text": "Private pool and stunning sea views",
-      "source_field": "amenities"
-    },
-    {
-      "text": "Ten-minute walk to the old town",
-      "source_field": "reviews"
-    },
-    {
-      "text": "Rated 4.96 out of 5 by 87 guests",
+      "text": "Rated 4.96 out of 5 across 87 guest reviews.",
       "source_field": "average_review_score"
     },
     {
-      "text": "Steps from the marina in Sitges, Spain",
-      "source_field": "location"
+      "text": "Guests rave about the stunning sea views, spotless private pool, and easy walk to the old town.",
+      "source_field": "reviews"
+    },
+    {
+      "text": "Located near the marina in Sitges, Spain, with the old town just a ten-minute stroll away.",
+      "source_field": "description"
+    },
+    {
+      "text": "Flexible booking: full refund available up to 30 days before arrival.",
+      "source_field": "policies"
     }
   ],
-  "about_section": "Casa del Mar is a bright three-bedroom villa located steps from the marina in Sitges, Spain. This seafront property accommodates up to 6 guests across 3 bedrooms and 2 bathrooms, with a private pool and sea views. Guests can walk to the old town in ten minutes, making it an ideal base for exploring the area.",
+  "about_section": "Casa del Mar is a bright three-bedroom villa in Sitges, Spain, set steps from the marina with beautiful sea views. The villa features a private pool and is within a ten-minute walk of the old town. With space for up to 6 guests and an average review score of 4.96 from 87 stays, it consistently delights visitors looking for a seafront escape.",
   "amenity_descriptions": [
     {
       "code": "PrivatePool",
-      "text": "Enjoy your own private swimming pool with spotless maintenance throughout your stay."
+      "text": "Enjoy your own private pool, perfect for cooling off in the Spanish sun."
     },
     {
       "code": "AirConditioning",
-      "text": "Air conditioning keeps the villa comfortable even during the warmest summer months."
+      "text": "Stay comfortable year-round with air conditioning throughout the villa."
     },
     {
       "code": "InternetBroadband",
-      "text": "Stay connected with high-speed broadband internet access throughout the property."
-    },
-    {
-      "code": "FreeParking",
-      "text": "Complimentary parking is available on-site for your convenience."
+      "text": "Stay connected with broadband internet access during your stay."
     },
     {
       "code": "DishWasher",
-      "text": "A dishwasher in the kitchen makes cleanup effortless after meals."
+      "text": "A dishwasher makes tidying up after meals quick and effortless."
+    },
+    {
+      "code": "FreeParking",
+      "text": "Free parking is available, so arriving by car is completely hassle-free."
     }
   ]
 }

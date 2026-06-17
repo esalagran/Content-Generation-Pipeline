@@ -40,21 +40,3 @@ class ContentGenerator:
             user=build_user(property),
         )
         return parse_output(raw)
-
-
-class AnthropicClient:
-    """Adapts the real Anthropic SDK to MessageClient. Not used in tests or in
-    the offline replay path, so it is never imported without a key."""
-
-    def __init__(self, sdk_client):
-        self._sdk = sdk_client
-
-    def create_message(self, *, model, max_tokens, temperature, system, user) -> str:
-        resp = self._sdk.messages.create(
-            model=model,
-            max_tokens=max_tokens,
-            temperature=temperature,
-            system=system,
-            messages=[{"role": "user", "content": user}],
-        )
-        return resp.content[0].text

@@ -1,17 +1,17 @@
 {
-  "model": "anthropic/claude-sonnet-4-5",
+  "model": "anthropic/claude-sonnet-4-6",
   "inspect_ai": "0.3.240",
-  "created": "2026-06-17T07:16:57+00:00",
+  "created": "2026-06-17T18:56:05+00:00",
   "generations": {
     "cottage": {
       "property_key": "cottage",
       "prompt_hash": "0558114d2387a72a",
-      "faithfulness": 1.0
+      "faithfulness": 0.8
     },
     "villa": {
       "property_key": "villa",
       "prompt_hash": "d36d9d9fc6a51fc2",
-      "faithfulness": 0.929
+      "faithfulness": 0.857
     }
   }
 }

@@ -18,14 +18,14 @@ def load_logs(log_dir: str = "logs") -> list[EvalLog]:
     return [read_eval_log(f) for f in sorted(glob.glob(f"{log_dir}/*.eval"))]
 
 
-def find_log(task: str, log_dir: str = "logs", with_judge: bool = False) -> EvalLog:
-    """Return the committed log for a task (preferring one with judge verdicts)."""
+def find_log(task: str, log_dir: str = "logs") -> EvalLog:
+    """Return the committed log for a task, preferring one with judge verdicts."""
     candidates = [l for l in load_logs(log_dir) if l.eval.task == task]
-    if with_judge:
-        candidates = [
-            l for l in candidates
-            if any("faithfulness" in (s.scores or {}) for s in (l.samples or []))
-        ] or candidates
+    with_judge = [
+        l for l in candidates
+        if any("faithfulness" in (s.scores or {}) for s in (l.samples or []))
+    ]
+    candidates = with_judge or candidates
     if not candidates:
         raise FileNotFoundError(f"no committed log for task '{task}' in {log_dir}/")
     return candidates[-1]
@@ -38,6 +38,8 @@ def verdict_map(log: EvalLog) -> dict[tuple[str, str], str]:
         score = (sample.scores or {}).get("faithfulness")
         if not score or not score.metadata:
             continue
+        if score.metadata.get("judge_error"):
+            continue  # unparseable judge output — not a real verdict, drop the sample
         for v in score.metadata["verdicts"]:
             out[(str(sample.id), v["claim"])] = v["verdict"]
     return out
@@ -72,17 +74,40 @@ class GoldReport:
         return self.tp / d if d else 0.0
 
     @property
-    def recall(self) -> float:
+    def recall(self) -> float:  # == TPR
         d = self.tp + self.fn
         return self.tp / d if d else 0.0
+
+    @property
+    def tpr(self) -> float:
+        return self.recall
+
+    @property
+    def tnr(self) -> float:
+        d = self.tn + self.fp
+        return self.tn / d if d else 0.0
+
+    @property
+    def cohen_kappa(self) -> float:
+        """Chance-corrected agreement — the honest number under class imbalance,
+        where raw agreement flatters. kappa = (po - pe) / (1 - pe)."""
+        n = len(self.rows)
+        if not n:
+            return 0.0
+        po = (self.tp + self.tn) / n
+        pe = (
+            (self.tp + self.fp) * (self.tp + self.fn)
+            + (self.tn + self.fn) * (self.tn + self.fp)
+        ) / (n * n)
+        return (po - pe) / (1 - pe) if pe != 1 else 0.0
 
 
 def gold_report(log_dir: str = "logs") -> GoldReport:
     """Compare committed judge verdicts to human gold labels. Positive class =
     'not grounded' (a hallucination the judge should flag)."""
     maps = {
-        "generation": verdict_map(find_log("generation_eval", log_dir, with_judge=True)),
-        "meta": verdict_map(find_log("meta_eval", log_dir, with_judge=True)),
+        "generation": verdict_map(find_log("generation_eval", log_dir)),
+        "meta": verdict_map(find_log("meta_eval", log_dir)),
     }
     rows, tp = [], 0
     fp = tn = fn = 0

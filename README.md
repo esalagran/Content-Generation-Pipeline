@@ -1,142 +1,226 @@
-# Property Listing Content Generator — Eval-First
+# Property Listing Content Generator — an Eval-First Pipeline
 
-Generates structured marketing copy (hero headline, highlights, "about", amenity
-descriptions) from vacation-rental property data — built so that **the evaluation
-suite is the primary artifact**. The generator is the thing under test.
+This system turns structured vacation-rental data into marketing copy (hero
+headline, highlights, an "about" section, amenity descriptions). But the copy
+generator is the easy half. The **deliverable is the evaluation suite** — and,
+specifically, a suite that has been turned on *itself* to show it actually measures
+what it claims to.
 
-The whole evaluation runs **fully offline with zero API calls**: deterministic
-scorers re-execute live; LLM-judge results are read from committed `inspect-ai`
-logs.
+The guiding principle: **the generator is the thing under test; the evaluator is the
+thing being built.** Everything below follows from that inversion.
 
-## Quickstart
+---
+
+## 1. Run it
 
 ```bash
 uv sync
-uv run pytest                          # unit tests, offline
-uv run inspect view --log-dir logs     # browse the committed real runs
+uv run pytest                          # unit tests, fully offline
+uv run inspect view --log-dir logs     # browse the two committed real runs
 ```
 
-Open `evals.ipynb` to see the full story (already executed; outputs committed).
-Re-run it offline with:
+Open `evals.ipynb` for the full narrative (already executed, outputs committed).
+Re-run it offline — **no API key needed** — with:
 
 ```bash
 uv run jupyter nbconvert --to notebook --execute --inplace evals.ipynb
 ```
 
-To regenerate the committed logs (needs an Anthropic key in `.env`):
+To regenerate the committed `.eval` logs from scratch (this *does* need a key):
 
 ```bash
 echo "ANTHROPIC_API_KEY=sk-..." > .env
 uv run python -c "from inspect_ai import eval; from content_pipeline.eval_task import generation_eval, meta_eval; \
-  eval(generation_eval(), model='anthropic/claude-sonnet-4-5', log_dir='logs'); \
-  eval(meta_eval(include_judge=True), model='anthropic/claude-sonnet-4-5', log_dir='logs')"
+  eval(generation_eval(), model='anthropic/claude-sonnet-4-6', log_dir='logs'); \
+  eval(meta_eval(include_judge=True), model='anthropic/claude-sonnet-4-6', log_dir='logs')"
 ```
 
-## How to read the results
+**Where to look:** `evals.ipynb` is the guided tour; `uv run inspect view` opens the
+raw logs. Two committed runs: `generation_eval` (real generations + all scorers) and
+`meta_eval` (the meta-evaluation, including the gated judge metrics).
 
-- **`uv run inspect view --log-dir logs`** opens the Inspect log viewer. There are
-  two committed real runs:
-  - `generation_eval` — real Anthropic generations scored by all four scorers.
-  - `meta_eval` — the meta-evaluation (below), including judge verdicts.
-- **`evals.ipynb`** is the narrative: a sample generation, production scores, the
-  meta-eval, and the judge-vs-human confusion matrix — each cell labeled as either
-  a *committed real run* or a *live offline recompute*.
+---
 
-## Approach
+## 2. The solution at a glance
+
+```
+ PropertyData ──▶ prompt (strict JSON) ──▶ LLM ──▶ parse/validate ──▶ GeneratedContent
+   (models.py)        (prompt.py)                  (Pydantic)          (4 sections)
+                                                                            │
+                                                ┌───────────────────────────┘
+                                                ▼
+                          ┌──────────────────  EVALUATION  ──────────────────┐
+                          │ Tier 1  deterministic   (no model, runs in CI)    │
+                          │ Tier 2  LLM judge       (faithfulness/coverage/…) │
+                          │ Tier 3  meta-eval       (validates Tiers 1 & 2)   │
+                          └────────────────────────────────────────────────────┘
+```
+
+| Concern | Where | Note |
+|---|---|---|
+| Data model | `models.py` | `PropertyData` in; `GeneratedContent` out |
+| Generation | `prompt.py`, `generator.py` | one prompt path, shared by Inspect + the DI generator |
+| Deterministic checks | `grounding.py` | pure functions, no model, unit-tested |
+| LLM-judge scorers | `scorers.py` | faithfulness, coverage, brand voice + their metrics |
+| Inspect tasks | `eval_task.py` | `generation_eval` and `meta_eval` |
+| Fixtures / gold set | `fixtures.py`, `goldset.py` | labelled generations + human judgements |
+| Offline reporting | `report.py` | reads committed logs; computes κ, confusion matrix |
 
 ### Generation
-Strict-JSON prompting validated by Pydantic (`models.py`, `prompt.py`), shared by
-the Inspect solver and the DI `ContentGenerator` so there is one code path. Each
-structured highlight carries a `source_field` citing the input it derives from —
-this binding is what makes grounding mechanically checkable.
+Each highlight is not free text — it is a `Claim` carrying a `source_field` naming the
+input it derives from, and each `AmenityDescription` carries the exact input amenity
+`code`. **That binding is the single most important design choice**: it converts
+"is this grounded?" from an LLM guess into a mechanical lookup (Tier 1). The model is
+prompted for strict JSON, which Pydantic validates (`parse_output`); a parse failure
+is a loud, observable `ContentParseError`, never a silent retry.
 
-> Trade-off: I used strict-JSON prompting rather than provider tool-forcing.
-> Inspect's `ToolDef` builds its schema from a callable signature, which is awkward
-> for a nested schema; JSON-prompting keeps a single provider-agnostic path and
-> makes parse failure an explicit, observable outcome (`ContentParseError`) instead
-> of something silently retried away.
+---
 
-### Evaluation — three tiers
-1. **Deterministic pre-filter** (`grounding.py`, no model, recomputable offline):
-   - `CitationValidityCheck` — every highlight cites a field that holds data; every
-     amenity code is one of the input codes.
-   - `QualityCheck` — length/format bounds, n-gram repetition, generic-phrase
-     blocklist. Catches accurate-but-bland boilerplate.
-2. **LLM judge** (`scorers.py`): atomic-claim **faithfulness** (each statement
-   judged entailed / contradicted / unsupported against the full input corpus,
-   RAGAS-style) plus a `model_graded_qa` brand-voice grader. Per-claim verdicts are
-   written to `Score.metadata`, so the committed log alone reconstructs
-   judge-vs-human agreement offline.
-   - Numeric and geographic grounding live here, not in the deterministic tier:
-     detecting "sleeps eight" or "moments from the beach" by regex is brittle and
-     misses the plausible hallucinations that matter.
-3. **Meta-eval** (`eval_task.py: meta_eval`): **validates the evaluator itself.**
-   A replay solver feeds hand-labeled good/bad generations through the scorers and
-   custom `@metric`s report **detection rate** (recall) and **false-positive rate**
-   (precision). The judge-vs-human confusion matrix compares committed verdicts to a
-   gold set (`goldset.py`).
+## 3. How the evaluation pipeline works
 
-### Results (this committed run)
-- Deterministic: **detection 100% / false-positive 0%** on the labeled set.
-- Judge faithfulness on real generations: **0.96**.
-- Judge on planted hallucinations: catches every one (fabricated landmark, wrong
-  guest count, and a **prompt-injection attempt** — "private helipad" injected via a
-  review — all marked *contradicted*).
-- Judge vs human gold set (n=13): **recall 100%, precision 71%** — it over-flags two
-  legitimate claims ("high-speed broadband", "air conditioning throughout").
-- Brand-voice (`model_graded_qa`) grades aren't summarized here; they live per-sample
-  in the `generation_eval` log — view them with `inspect view --log-dir logs`.
+The pipeline is three tiers, cheapest first — the cost hierarchy the production-eval
+literature converges on (code assertions → LLM judge → human calibration).
 
-The eval also caught **a bug in my own code**: the grounding corpus initially
-omitted `rental_info` and review counts, so the judge marked valid claims
-unsupported (good-copy faithfulness 0.77). Completing the corpus moved it to 0.96.
-That is the eval-first loop doing its job.
+### Tier 1 — deterministic pre-filter (`grounding.py`, no model)
+Runs in CI on every change, recomputes offline bit-for-bit.
+- **`CitationValidityCheck`** — every highlight cites a field that actually holds data;
+  every amenity code is one of the property's input codes.
+- **`QualityCheck`** — length/count bounds, n-gram repetition, a generic-phrase
+  blocklist. Catches accurate-but-lifeless boilerplate.
 
-## Reproducibility
-Single mechanism: a **replay solver** returns committed generations by sample id, so
-deterministic scorers re-run inside Inspect with zero API and no second scoring path
-to drift. The judge needs a key, so its verdicts are read from the committed log.
-`inspect-ai` is pinned exactly (`==0.3.240`) because `inspect view` is
-version-sensitive; `fixtures/manifest.json` records model id, prompt hash, and
-timestamp for each committed generation.
+### Tier 2 — LLM judge (`scorers.py`)
+Each dimension is **one judge call** emitting **per-claim binary verdicts** into
+`Score.metadata` (so the committed log reconstructs everything offline):
+- **faithfulness** — *precision*. Decompose copy into atomic claims, judge each
+  `entailed / contradicted / unsupported` against the input corpus (the RAGAS
+  extract→verify→score pattern). Value = fraction entailed.
+- **coverage** — *recall*. Of the property's marquee selling points (`salient_facts`),
+  the fraction the copy actually surfaces. A perfectly faithful listing that buries the
+  4.96/87 social proof fails here and **nowhere else**.
+- **brand voice** — a `model_graded_qa`-style grader for tone/specificity.
+- A judge response that won't parse is flagged `judge_error` and *excluded* from the
+  score mean — infra failure never masquerades as a content score of 0.
 
-## Engineering notes
-- **Dependency injection / mocking**: `ContentGenerator` takes a `MessageClient`;
-  tests inject a fake (`tests/test_generator.py`). No test touches the network.
-- **Inheritance**: `GroundingCheck` ABC + two concrete checks sharing corpus access
-  and result type. Used where it earns its place — not manufactured.
-- **Inspect-native**: `Dataset`/`Sample`, `@scorer`/`@metric`, `model_graded_qa`,
-  `value_to_float`, per-claim `Score.metadata`.
+### Tier 3 — meta-eval: validating the evaluator (`eval_task.py: meta_eval`)
+This is the centerpiece. A **replay solver** feeds hand-labelled good/bad generations
+(`fixtures.py`) back through the scorers with zero API, and custom `@metric`s ask "is
+the scorer any good?":
+- *Deterministic*: `detection_rate` (recall on planted defects) + `false_positive_rate`.
+- *Judge, gated not just reported*: `judge_detection_rate` (per-claim recall — did it
+  flag the **specific** planted claim?) and `judge_false_positive_rate` (over-flagging
+  on genuinely-clean copy).
+- *Judge vs human*: the confusion matrix in `report.py` reports **Cohen's κ** + TPR/TNR
+  against the gold set (`goldset.py`).
 
-## How I used AI
-Built with Claude Code (the agent) in plan mode. I drove several adversarial
-critique rounds against my own plan before writing code — each round is reflected in
-the architecture (replay solver instead of `mockllm`; cutting a brittle numeric
-regex check; making false-positive rate first-class; the meta-eval as the
-centerpiece). The eval-first loop above (corpus bug found by the judge) was likewise
-caught by running the suite, not by inspection.
+Some negatives are deliberately **held-out** — not co-designed with the checks — so
+detection rate measures *generalization*, not construction (see Tradeoffs).
 
-## What I deliberately deferred (and why)
-3–4h forces choices; I spent depth on eval *validation* over generation breadth.
+---
 
-- **Omission / coverage** — *a primary dimension I ran out of time for*, not a niche.
-  A faithful listing that forgets the 4.96 score or the standout amenity is a
-  business failure. Faithfulness is necessary, not sufficient.
-- **Grounding-source limits** — `image_urls` excluded (visual claims aren't
-  groundable against text without vision). Reviews are *weaker* grounding than
-  structured fields (complaints, contradictions, PII); a review mentioning a landmark
-  grounds a fact, but UGC in the corpus is also a poisoning vector (see the injection
-  fixture).
-- **Multilingual** — Barcelona property → EN/ES? mixed-language reviews? Unaddressed.
-- **Failure modes** — parse failure is defined (fail the sample); refusal /
-  truncation / rate-limit handling is not built out.
-- **Regression gating** — the suite's production *purpose* is to gate prompt/model
-  changes with pass thresholds over two `.eval` runs; not wired into CI here.
-- **Judge cost** — atomic-claim judging is the scaling bottleneck (one judge call per
-  generation here; verdict quality vs. cost is the real production lever).
-- **Statistical power** — n is a *demonstration* size. Per-check rates and the
-  confusion matrix are methodology that scales to hundreds, not significant point
-  estimates; the gold set has a single annotator (me, who wrote the judge prompt) so
-  there is no inter-annotator agreement; and the gold set validates judge *verdicts*,
-  not the upstream claim *decomposition*.
-```
+## 4. Tradeoffs (the interesting part)
+
+**Eval-first, generator second.** I spent the budget on validating the evaluator, not
+on generation breadth. A suite that rubber-stamps everything is worthless; proving it
+catches real failures *and* doesn't cry wolf is the harder, more valuable thing.
+
+**Gating the judge, not just the cheap tier.** The easy version validates only the
+deterministic checks (which can't really be wrong) and merely *reports* judge scores.
+I made the judge a first-class meta-eval citizen with its own detection/false-positive
+metrics — because the judge is where the real grounding risk lives, so it's the part
+that most needs validating.
+
+**Citation binding over free-text grounding.** Making each claim cite its
+`source_field` costs prompt complexity and constrains the model, but it buys a
+deterministic, model-free grounding check. Worth it.
+
+**Strict-JSON prompting over provider tool-forcing.** Inspect's `ToolDef` derives its
+schema from a callable signature, awkward for a nested object. JSON-prompting keeps one
+provider-agnostic path and makes parse failure explicit (`ContentParseError`) rather
+than something silently retried away.
+
+**Held-out negatives over self-fitted ones.** It's tempting to write negatives that
+exactly trip your checks (detection = 100%, looks great, proves nothing). I included a
+bland sample whose phrasing is *not* on the denylist — and `QualityCheck` misses it, so
+`meta_quality` detection honestly drops to **50%**. That number is the point: it
+measures whether a 7-phrase blocklist generalizes (it doesn't), and shows the judge
+backstopping it. An honest 50% beats a constructed 100%.
+
+**Binary verdicts over Likert; κ over raw agreement.** Per-claim judgements are binary
+with a written reason (not a 1–5 scale that clusters on the middle). Agreement is
+reported as Cohen's κ, because raw agreement flatters under class imbalance.
+
+**Faithfulness *and* coverage.** Faithfulness alone is necessary but not sufficient — a
+listing can be 100% grounded and still bury every selling point. Coverage is the recall
+complement; together they bracket the quality of the copy.
+
+**Offline reproducibility — two mechanisms, by necessity.** Deterministic scorers
+re-run live via the replay solver (truly reproducible, no key). The judge needs a key,
+so its verdicts are read from the **committed `.eval` logs**. `inspect-ai` is pinned
+exactly (`==0.3.240`) because the log format / viewer are version-sensitive, and
+`fixtures/manifest.json` records model id + prompt hash so stale logs are detectable.
+
+**Judge == generator model (a conceded tradeoff).** Both are `claude-sonnet-4-6` to fit
+the budget; a distinct judge model would avoid self-enhancement bias. `faithfulness_scorer`
+already takes a `grader_model`, so it's a one-line change.
+
+---
+
+## 5. Results (this committed run — `claude-sonnet-4-6`)
+
+| Signal | Value | Reading |
+|---|---|---|
+| `citation_validity` detection / FP | **100% / 0%** | catches every designed citation defect |
+| `quality` detection | **50%** | *by design* — held-out bland negative slips the denylist |
+| `judge_detection_rate` | **100%** | flags the specific planted claim (incl. a prompt-injection attempt) |
+| `judge_false_positive_rate` | **~13%** | over-flags grounded amenity flourishes — real calibration debt |
+| `judge_error_rate` | **0%** | no infra failures this run |
+| judge-vs-human **Cohen's κ** | **≈ 0.53** | moderate; raw agreement (75%) would have flattered |
+| faithfulness (real gens) | villa **0.86** / cottage **0.80** | |
+| coverage (real gens) | **100%** | `BAD_INCOMPLETE_VILLA` is the low-coverage case only this catches |
+
+
+---
+
+## 6. Engineering notes
+- **Dependency injection / mocking** — `ContentGenerator` takes a `MessageClient`;
+  `tests/test_generator.py` injects a fake. No test touches the network.
+- **Inheritance** — `GroundingCheck` ABC + concrete checks sharing corpus access and
+  result type, used where it earns its place.
+- **Inspect-native** — `Dataset`/`Sample`, `@scorer`/`@metric` (custom
+  `judge_detection_rate` / `judge_false_positive_rate` / `judge_error_rate`),
+  `model_graded_qa`, per-claim `Score.metadata`, replay solver.
+- **Tested invariants** — decomposition correctness (`test_decomposition.py`),
+  gold-set↔log join integrity (`test_report.py`), prompt-hash drift (`test_manifest.py`).
+
+---
+
+## 7. Documented, not built (and why)
+Scoped out deliberately under a 3–4h budget — I can speak to each:
+- **Judge model ≠ generator** (self-enhancement bias) — one-line change, left equal for budget.
+- **Meta-validating brand voice** — faithfulness and coverage are gated; brand voice is
+  still only reported (no gold labels yet).
+- **Injection hardening** — the judge corpus concatenates review text as source facts,
+  so injection-resistance currently relies on the judge's intelligence (it does catch the
+  planted "helipad"); structurally separating trusted fields from untrusted UGC is the fix.
+- **CI regression gating** over `.eval` thresholds, **multilingual**, **image grounding**,
+  **refusal/truncation handling** — unaddressed.
+- **Statistical power** — n is a *demonstration* size; κ and every rate have very wide CIs,
+  and a single annotator (who wrote the judge prompt) means no inter-annotator agreement.
+
+### The production picture (what this is a scoped instance of)
+Three layers used together — code assertions (CI) → LLM judge → human calibration —
+with evals emerging from *observed failures* (error analysis), not a generic metric menu
+(ROUGE/BERTScore are deliberately avoided). In production this closes into a flywheel:
+the offline golden set gates every change, sampled live traces are judged reference-free
+and clustered into new fixtures, and the judge prompt is re-tuned when κ against humans
+drifts. This suite is the offline half, built to scale into that loop.
+
+---
+
+## 8. How I used AI
+Built with Claude Code. I ran several adversarial critique rounds against my own design
+before and during implementation — each is reflected in the architecture: the replay
+solver instead of `mockllm`, cutting a brittle numeric-regex check in favour of the
+judge, making false-positive rate first-class, gating the judge (not just the
+deterministic tier), and adding held-out negatives so detection measures generalization.
+The corpus bug above was caught by *running* the suite, not by reading the code.

@@ -15,6 +15,7 @@ from content_pipeline.grounding import (
     CitationValidityCheck,
     QualityCheck,
     build_corpus,
+    salient_facts,
     strip_html,
 )
 
@@ -57,3 +58,15 @@ def test_quality_catches_bland_copy():
     assert not result.passed
     # bland sample trips multiple sub-rules: generic phrase, too few highlights, repetition
     assert len(result.failures) >= 2
+
+
+def test_salient_facts_villa_includes_premium_and_social_proof():
+    kinds = {f["kind"] for f in salient_facts(VILLA)}
+    assert {"capacity", "location", "social_proof", "amenity"} <= kinds
+    assert any("pool" in f["fact"] for f in salient_facts(VILLA))  # PrivatePool is premium
+
+
+def test_salient_facts_cottage_drops_social_proof_when_no_reviews():
+    facts = salient_facts(COTTAGE)
+    assert "social_proof" not in {f["kind"] for f in facts}  # 0 reviews
+    assert any("fireplace" in f["fact"] for f in facts)

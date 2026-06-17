@@ -25,7 +25,9 @@ from .scorers import (
     check_score_fn,
     brand_voice_scorer,
     citation_validity_scorer,
+    coverage_scorer,
     faithfulness_scorer,
+    meta_faithfulness_scorer,
     quality_scorer,
 )
 
@@ -67,7 +69,8 @@ def generation_eval() -> Task:
     return Task(
         dataset=samples,
         solver=[generate()],
-        scorer=DETERMINISTIC_SCORERS + [faithfulness_scorer(), brand_voice_scorer()],
+        scorer=DETERMINISTIC_SCORERS
+        + [faithfulness_scorer(), coverage_scorer(), brand_voice_scorer()],
         config=GENERATE_CONFIG,
         name="generation_eval",
     )
@@ -135,6 +138,7 @@ def meta_eval(include_judge: bool = False) -> Task:
                     "generation": g.raw,
                     "label": g.label,
                     "expect_deterministic": list(g.expect_deterministic),
+                    "expect_judge_flag": list(g.expect_judge_flag),
                     "judge_failure": g.judge_failure,
                     "note": g.note,
                 },
@@ -146,7 +150,10 @@ def meta_eval(include_judge: bool = False) -> Task:
         _meta_scorer(QualityCheck, "quality"),
     ]
     if include_judge:
-        scorers.append(faithfulness_scorer())
+        # meta_faithfulness_scorer = same judge call, but GATED by per-claim
+        # detection/false-positive metrics (not just reported mean).
+        scorers.append(meta_faithfulness_scorer())
+        scorers.append(coverage_scorer())
 
     return Task(
         dataset=samples,

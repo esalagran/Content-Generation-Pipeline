@@ -21,17 +21,25 @@ from inspect_ai.model import (
 from inspect_ai.scorer import (
     CORRECT,
     INCORRECT,
+    SampleScore,
     Score,
     Target,
     accuracy,
-    mean,
+    metric,
     model_graded_qa,
     scorer,
     stderr,
+    value_to_float,
 )
 from inspect_ai.solver import TaskState
 
-from .grounding import CitationValidityCheck, GroundingCheck, QualityCheck, build_corpus
+from .grounding import (
+    CitationValidityCheck,
+    GroundingCheck,
+    QualityCheck,
+    build_corpus,
+    salient_facts,
+)
 from .models import GeneratedContent, PropertyData
 from .prompt import ContentParseError, parse_output
 
@@ -73,12 +81,13 @@ def quality_scorer():
 def atomic_claims(content: GeneratedContent) -> list[dict]:
     """Decompose generated copy into atomic, individually-checkable statements.
 
-    NOTE (validation gap, stated in README): the gold set validates the judge's
-    *verdict*, not this decomposition. Decomposition is assumed-correct here and
-    only spot-checked manually."""
+    Decomposition correctness is validated in tests/test_decomposition.py."""
     claims = [{"field": "hero_headline", "text": content.hero_headline}]
     for c in content.highlights:
         claims.append({"field": f"highlight:{c.source_field.value}", "text": c.text})
+    # ponytail: naive sentence split. Decimals are safe ("4.96 by" has no space
+    # after the dot), but abbreviations ("St. Mary") over-split. Upgrade path if it
+    # matters: a real segmenter (spaCy/pysbd). Behaviour pinned in test_decomposition.
     for sentence in re.split(r"(?<=[.!?])\s+", content.about_section.strip()):
         if sentence.strip():
             claims.append({"field": "about", "text": sentence.strip()})
@@ -103,11 +112,19 @@ def _judge_user(corpus: str, claims: list[dict]) -> str:
     return f"SOURCE FACTS:\n{corpus}\n\nCLAIMS:\n{listed}"
 
 
-def _parse_verdicts(raw: str, n: int) -> tuple[list[str], int]:
-    """Map judge output to a verdict per claim id; missing -> 'unsupported'.
-    Also returns the number of claims left at the default (judge gave no parseable
-    verdict) so a format regression is visible, not silently scored as unsupported."""
-    verdicts = ["unsupported"] * n
+_FAITHFULNESS_VERDICTS = frozenset({"entailed", "contradicted", "unsupported"})
+
+
+def _parse_verdicts(
+    raw: str,
+    n: int,
+    allowed: frozenset[str] = _FAITHFULNESS_VERDICTS,
+    default: str = "unsupported",
+) -> tuple[list[str], int]:
+    """Map judge output to a verdict per item id; missing -> `default`.
+    Also returns the number of items left at the default (judge gave no parseable
+    verdict) so a format regression is visible, not silently scored as default."""
+    verdicts = [default] * n
     seen: set[int] = set()
     match = re.search(r"\[.*\]", raw, re.DOTALL)
     if not match:
@@ -116,7 +133,7 @@ def _parse_verdicts(raw: str, n: int) -> tuple[list[str], int]:
         for item in json.loads(match.group(0)):
             i = item.get("id")
             v = item.get("verdict")
-            if isinstance(i, int) and 0 <= i < n and v in {"entailed", "contradicted", "unsupported"}:
+            if isinstance(i, int) and 0 <= i < n and v in allowed:
                 verdicts[i] = v
                 seen.add(i)
     except (json.JSONDecodeError, AttributeError, TypeError):
@@ -124,18 +141,103 @@ def _parse_verdicts(raw: str, n: int) -> tuple[list[str], int]:
     return verdicts, n - len(seen)
 
 
-@scorer(name="faithfulness", metrics=[mean(), stderr()])
-def faithfulness_scorer(grader_model: str | None = None):
-    """One judge call per generation returns a verdict for every atomic claim.
-    value = fraction entailed. Per-claim verdicts go to Score.metadata so the
-    committed log alone reconstructs judge-vs-gold offline."""
+# --- judge metrics: read per-claim verdicts + sample metadata from the .eval log ---
 
+
+_to_float = value_to_float()
+
+
+def _judge_errored(s: SampleScore) -> bool:
+    return bool((s.score.metadata or {}).get("judge_error"))
+
+
+def _verdicts(s: SampleScore) -> list[dict]:
+    return (s.score.metadata or {}).get("verdicts") or []
+
+
+@metric
+def judge_value_mean():
+    """Mean judge score (faithfulness or coverage), EXCLUDING samples whose judge
+    output was unparseable — those are infra failures, not content failures."""
+
+    def compute(scores: list[SampleScore]) -> float:
+        vals = [_to_float(s.score.value) for s in scores if not _judge_errored(s)]
+        return sum(vals) / len(vals) if vals else 0.0
+
+    return compute
+
+
+@metric
+def judge_error_rate():
+    """Fraction of samples whose judge output was unparseable — a SEPARATE signal so
+    a flaky judge never masquerades as a content score of 0."""
+
+    def compute(scores: list[SampleScore]) -> float:
+        return sum(_judge_errored(s) for s in scores) / len(scores) if scores else 0.0
+
+    return compute
+
+
+@metric
+def judge_detection_rate():
+    """Per-claim recall: of the claims each sample's `expect_judge_flag` marks as
+    planted hallucinations, the fraction the judge actually flagged (not 'entailed')."""
+
+    def compute(scores: list[SampleScore]) -> float:
+        caught = total = 0
+        for s in scores:
+            if _judge_errored(s):
+                continue
+            expected = (s.sample_metadata or {}).get("expect_judge_flag") or []
+            if not expected:
+                continue
+            vmap = {v["claim"]: v["verdict"] for v in _verdicts(s)}
+            for claim in expected:
+                total += 1
+                if vmap.get(claim, "unsupported") != "entailed":
+                    caught += 1
+        return caught / total if total else 0.0
+
+    return compute
+
+
+@metric
+def judge_false_positive_rate():
+    """Per-claim over-flagging: of all claims on genuinely-clean `good` samples, the
+    fraction the judge wrongly flagged (the honest over-flag rate)."""
+
+    def compute(scores: list[SampleScore]) -> float:
+        flagged = total = 0
+        for s in scores:
+            if _judge_errored(s):
+                continue
+            if (s.sample_metadata or {}).get("label") != "good":
+                continue
+            for v in _verdicts(s):
+                total += 1
+                if v["verdict"] != "entailed":
+                    flagged += 1
+        return flagged / total if total else 0.0
+
+    return compute
+
+
+# --- judge coroutine, shared by the production and meta faithfulness scorers ---
+
+
+def _faithfulness_score_fn(grader_model: str | None):
     async def score(state: TaskState, target: Target) -> Score:
         prop = _property(state)
         try:
             content = parse_output(state.output.completion)
         except ContentParseError as e:
-            return Score(value=0.0, explanation=f"parse failure: {e}", metadata={"verdicts": []})
+            # generation parse failure: a real content failure (faithfulness 0),
+            # NOT a judge-infra failure.
+            return Score(
+                value=0.0,
+                explanation=f"parse failure: {e}",
+                metadata={"verdicts": [], "judge_error": False},
+            )
 
         claims = atomic_claims(content)
         grader = get_model(grader_model) if grader_model else get_model()
@@ -147,6 +249,7 @@ def faithfulness_scorer(grader_model: str | None = None):
             config=GenerateConfig(temperature=0.0, max_tokens=1500),
         )
         verdicts, unparsed = _parse_verdicts(out.completion, len(claims))
+        judge_error = bool(claims) and unparsed == len(claims)
 
         per_claim = [
             {"claim": c["text"], "field": c["field"], "verdict": v}
@@ -154,15 +257,113 @@ def faithfulness_scorer(grader_model: str | None = None):
         ]
         entailed = verdicts.count("entailed")
         contradicted = verdicts.count("contradicted")
-        faithfulness = entailed / len(claims) if claims else 1.0
+        explanation = (
+            f"{entailed} entailed, {contradicted} contradicted, "
+            f"{len(claims) - entailed - contradicted} unsupported"
+        )
+        if judge_error:
+            explanation = "JUDGE PARSE FAILURE — not a content signal; " + explanation
         return Score(
-            value=faithfulness,
+            value=entailed / len(claims) if claims else 1.0,
             answer=f"{entailed}/{len(claims)} entailed",
-            explanation=(
-                f"{entailed} entailed, {contradicted} contradicted, "
-                f"{len(claims) - entailed - contradicted} unsupported"
-            ),
-            metadata={"verdicts": per_claim, "unparsed": unparsed},
+            explanation=explanation,
+            metadata={"verdicts": per_claim, "unparsed": unparsed, "judge_error": judge_error},
+        )
+
+    return score
+
+
+@scorer(name="faithfulness", metrics=[judge_value_mean(), judge_error_rate(), stderr()])
+def faithfulness_scorer(grader_model: str | None = None):
+    """Production judge: one call per generation, value = fraction entailed; per-claim
+    verdicts go to Score.metadata so the committed log reconstructs judge-vs-gold
+    offline. (Production would use a judge model != the generator to avoid
+    self-enhancement bias — see README; kept equal here to fit the budget.)"""
+    return _faithfulness_score_fn(grader_model)
+
+
+@scorer(
+    name="faithfulness",
+    metrics=[judge_detection_rate(), judge_false_positive_rate(), judge_error_rate()],
+)
+def meta_faithfulness_scorer(grader_model: str | None = None):
+    """Same judge logic, GATED by the metrics that validate it: per-claim detection
+    on planted hallucinations and false-positives on clean copy."""
+    return _faithfulness_score_fn(grader_model)
+
+
+# --- LLM judge: coverage (recall complement of faithfulness) ---
+
+_COVERAGE_SYSTEM = """\
+You judge whether vacation-rental listing copy USES the property's strongest
+selling points. You are given a numbered list of salient facts and the generated
+copy. For each fact decide exactly one verdict:
+- "used": the copy clearly conveys this fact or its benefit. Paraphrase is fine;
+  approximations consistent with the fact count (e.g. "nearly 5 stars" for 4.96).
+- "missed": the copy omits this selling point entirely.
+Output ONLY a JSON array, one object per fact:
+[{"id": 0, "verdict": "used", "reason": "..."}]"""
+
+
+def _copy_text(content: GeneratedContent) -> str:
+    parts = [content.hero_headline, content.about_section]
+    parts += [c.text for c in content.highlights]
+    parts += [f"{a.code}: {a.text}" for a in content.amenity_descriptions]
+    return "\n".join(parts)
+
+
+def _coverage_user(facts: list[dict], copy_text: str) -> str:
+    listed = "\n".join(f"{f['id']}. {f['fact']}" for f in facts)
+    return f"SALIENT FACTS:\n{listed}\n\nGENERATED COPY:\n{copy_text}"
+
+
+@scorer(name="coverage", metrics=[judge_value_mean(), judge_error_rate(), stderr()])
+def coverage_scorer(grader_model: str | None = None):
+    """Of the property's strongest selling points (salient_facts), the fraction
+    the copy surfaces. value = used / total. Per-fact verdicts go to
+    Score.metadata so the committed log alone reconstructs the judgement offline.
+    Shares the judge-error separation: an unparseable judge response is flagged
+    judge_error (excluded from judge_value_mean), not silently scored 'all missed'."""
+
+    async def score(state: TaskState, target: Target) -> Score:
+        prop = _property(state)
+        try:
+            content = parse_output(state.output.completion)
+        except ContentParseError as e:
+            return Score(value=0.0, explanation=f"parse failure: {e}",
+                         metadata={"verdicts": [], "judge_error": False})
+
+        facts = salient_facts(prop)
+        if not facts:
+            return Score(value=1.0, explanation="no salient facts",
+                         metadata={"verdicts": [], "judge_error": False})
+
+        grader = get_model(grader_model) if grader_model else get_model()
+        out = await grader.generate(
+            [
+                ChatMessageSystem(content=_COVERAGE_SYSTEM),
+                ChatMessageUser(content=_coverage_user(facts, _copy_text(content))),
+            ],
+            config=GenerateConfig(temperature=0.0, max_tokens=1000),
+        )
+        verdicts, unparsed = _parse_verdicts(
+            out.completion, len(facts), allowed=frozenset({"used", "missed"}), default="missed"
+        )
+        judge_error = unparsed == len(facts)
+
+        per_fact = [
+            {"fact": f["fact"], "kind": f["kind"], "verdict": v}
+            for f, v in zip(facts, verdicts)
+        ]
+        used = verdicts.count("used")
+        explanation = f"{used} of {len(facts)} salient facts surfaced"
+        if judge_error:
+            explanation = "JUDGE PARSE FAILURE — not a content signal; " + explanation
+        return Score(
+            value=used / len(facts),
+            answer=f"{used}/{len(facts)} used",
+            explanation=explanation,
+            metadata={"verdicts": per_fact, "unparsed": unparsed, "judge_error": judge_error},
         )
 
     return score

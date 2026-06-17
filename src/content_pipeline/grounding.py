@@ -67,6 +67,45 @@ def build_corpus(property: PropertyData) -> str:
     return "\n".join(parts).lower()
 
 
+# Marquee amenities a listing should not bury. Deliberately tight (not every
+# amenity is a selling point) so coverage stays achievable. code -> copy phrase.
+PREMIUM_AMENITIES = {
+    "PrivatePool": "a private pool",
+    "HotTub": "a hot tub",
+    "Jacuzzi": "a jacuzzi",
+    "Sauna": "a sauna",
+    "SeaView": "sea views",
+    "OceanView": "ocean views",
+    "Beachfront": "a beachfront setting",
+    "Fireplace": "a fireplace",
+}
+
+
+def salient_facts(property: PropertyData) -> list[dict]:
+    """The property's strongest selling points that good copy SHOULD surface.
+
+    Deterministic and deliberately tight (marquee facts only). Coverage = the
+    fraction of these the copy actually uses — recall, the complement of
+    faithfulness's precision: a listing can be perfectly grounded yet bury the
+    pool or the 4.96/87 social proof, and only this catches it."""
+    p = property
+    facts = [
+        {"kind": "capacity",
+         "fact": f"sleeps up to {p.rental_info.max_guests} guests in "
+                 f"{p.rental_info.bedrooms} bedrooms"},
+        {"kind": "location", "fact": f"located in {p.location.city}, {p.location.country}"},
+    ]
+    if p.num_of_reviews > 0 and p.average_review_score >= 4.5:
+        facts.append({
+            "kind": "social_proof",
+            "fact": f"rated {p.average_review_score} from {p.num_of_reviews} guest reviews",
+        })
+    for code, phrase in PREMIUM_AMENITIES.items():
+        if code in p.amenities:
+            facts.append({"kind": "amenity", "fact": phrase})
+    return [{"id": i, **f} for i, f in enumerate(facts)]
+
+
 @dataclass
 class CheckResult:
     passed: bool
@@ -179,6 +218,3 @@ class QualityCheck(GroundingCheck):
             counts[tri] = counts.get(tri, 0) + 1
         worst = max(counts.items(), key=lambda kv: kv[1], default=(None, 0))
         return worst[0] if worst[1] >= 3 else None
-
-
-DETERMINISTIC_CHECKS: list[type[GroundingCheck]] = [CitationValidityCheck, QualityCheck]

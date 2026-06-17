@@ -89,6 +89,9 @@ class LabeledGeneration:
     content: GeneratedContent
     # which deterministic checks SHOULD fire (empty for good, or for judge-only bad)
     expect_deterministic: set[str] = field(default_factory=set)
+    # exact claim texts the JUDGE must flag (planted hallucinations) — drives the
+    # per-claim judge_detection_rate metric in meta_eval.
+    expect_judge_flag: set[str] = field(default_factory=set)
     # does the judge-detectable failure live here? (validated in the real-run log)
     judge_failure: bool = False
     note: str = ""
@@ -117,18 +120,18 @@ GOOD_VILLA = GeneratedContent(
     ],
 )
 
-# Clean *deterministically* (Fireplace is a valid amenity code, lengths/counts ok),
-# but the "wood-burning" detail isn't in the data — a judge-detectable over-claim.
-# So this doubles as a good-copy FP test AND a judge true-positive (see goldset.py).
+# Genuinely clean: every claim grounded (Fireplace IS a valid amenity; mild
+# flourishes only). Used as the judge false-positive baseline — any flag here is a
+# true over-flag, so the fixture must NOT contain a real over-claim.
 GOOD_COTTAGE = GeneratedContent(
     hero_headline="Cosy stone cottage for two in the Cotswolds",
     highlights=[
         Claim(text="A one-bedroom retreat for two guests", source_field=SourceField.rental_info),
-        Claim(text="Wood-burning fireplace for cool evenings", source_field=SourceField.amenities),
+        Claim(text="A fireplace for cool evenings", source_field=SourceField.amenities),
         Claim(text="Set in the quiet Cotswolds countryside", source_field=SourceField.location),
     ],
     about_section="Briar Cottage is a cosy stone retreat for two in Stow-on-the-Wold.",
-    amenity_descriptions=[AmenityDescription(code="Fireplace", text="A wood-burning fireplace.")],
+    amenity_descriptions=[AmenityDescription(code="Fireplace", text="A fireplace to gather around on cool evenings.")],
 )
 
 # Deterministic-detectable failures.
@@ -190,10 +193,66 @@ BAD_WRONG_NUMBER = GeneratedContent(
 )
 
 
+# --- Held-out negatives: NOT co-designed with the checks (measure generalization) ---
+
+# Generic/bland, but uses NONE of QualityCheck.GENERIC_PHRASES and is structurally
+# valid (4 highlights, fine lengths, no repeated trigram). QualityCheck PASSES it —
+# so meta_quality detection_rate honestly drops below 100%, exposing that a 7-phrase
+# denylist doesn't generalize. The judge brand-voice is the backstop.
+BAD_NOVEL_BLAND = GeneratedContent(
+    hero_headline="Your ideal escape awaits in beautiful Sitges",
+    highlights=[
+        Claim(text="An oasis of calm for a truly memorable stay", source_field=SourceField.description),
+        Claim(text="Room for up to six guests", source_field=SourceField.rental_info),
+        Claim(text="A private pool for your enjoyment", source_field=SourceField.amenities),
+        Claim(text="Highly rated by happy guests", source_field=SourceField.average_review_score),
+    ],
+    about_section=(
+        "This wonderful property offers a truly unforgettable experience. "
+        "It is the ideal choice for discerning travellers seeking comfort and style."
+    ),
+    amenity_descriptions=[AmenityDescription(code="PrivatePool", text="A lovely pool for relaxing.")],
+)
+
+# Plausible fabrication with VALID citations/codes, so CitationValidityCheck passes
+# by construction — only the judge can catch the invented "rooftop terrace".
+BAD_PLAUSIBLE_HALLUCINATION = GeneratedContent(
+    hero_headline="Seafront Sitges villa with a sunny rooftop terrace",
+    highlights=[
+        Claim(text="Relax on the private rooftop terrace with panoramic views", source_field=SourceField.description),
+        Claim(text="Three bedrooms for up to six guests", source_field=SourceField.rental_info),
+        Claim(text="A private pool steps from the marina", source_field=SourceField.amenities),
+    ],
+    about_section="The villa features a rooftop terrace that is perfect for evening drinks at sunset.",
+    amenity_descriptions=[AmenityDescription(code="PrivatePool", text="A private pool for your group.")],
+)
+
+
+# Deterministically clean and well-voiced, every claim grounded — but it buries
+# the villa's marquee selling points (private pool, 4.96/87 social proof).
+# Faithful yet low-COVERAGE: the recall failure no other scorer catches.
+BAD_INCOMPLETE_VILLA = GeneratedContent(
+    hero_headline="Bright three-bedroom villa in coastal Sitges",
+    highlights=[
+        Claim(text="Room for up to six guests", source_field=SourceField.rental_info),
+        Claim(text="A short stroll to the old town", source_field=SourceField.reviews),
+        Claim(text="Set steps from the marina", source_field=SourceField.description),
+    ],
+    about_section=(
+        "Casa del Mar is a light-filled retreat in Sitges, a short walk from "
+        "the old town and the marina."
+    ),
+    amenity_descriptions=[
+        AmenityDescription(code="AirConditioning", text="Air conditioning throughout for warm summers."),
+        AmenityDescription(code="FreeParking", text="Free on-site parking for your stay."),
+    ],
+)
+
+
 META_GENERATIONS: list[LabeledGeneration] = [
     LabeledGeneration("good_villa", "villa", "good", GOOD_VILLA, note="clean grounded copy"),
     LabeledGeneration("good_cottage", "cottage", "good", GOOD_COTTAGE,
-                      note="deterministically clean; carries one judge-only over-claim"),
+                      note="clean grounded copy (judge false-positive baseline)"),
     LabeledGeneration("bad_unlisted_amenity", "villa", "bad", BAD_UNLISTED_AMENITY,
                       expect_deterministic={"citation_validity"}, note="amenity code not in input"),
     LabeledGeneration("bad_empty_citation", "cottage", "bad", BAD_EMPTY_CITATION,
@@ -201,7 +260,23 @@ META_GENERATIONS: list[LabeledGeneration] = [
     LabeledGeneration("bad_bland", "villa", "bad", BAD_BLAND,
                       expect_deterministic={"quality"}, note="generic phrases, 1 highlight, repetition"),
     LabeledGeneration("bad_fabricated_landmark", "villa", "bad", BAD_FABRICATED_LANDMARK,
-                      judge_failure=True, note="Sagrada Familia not in data"),
+                      judge_failure=True,
+                      expect_judge_flag={"A five-minute walk to the Sagrada Familia"},
+                      note="Sagrada Familia not in data"),
     LabeledGeneration("bad_wrong_number", "villa", "bad", BAD_WRONG_NUMBER,
-                      judge_failure=True, note="5 bedrooms / sleeps 12 contradicts rental_info"),
+                      judge_failure=True,
+                      expect_judge_flag={"Five bedrooms sleeping up to twelve guests"},
+                      note="5 bedrooms / sleeps 12 contradicts rental_info"),
+    # held-out: deterministic checks miss it (novel phrasing), judge brand-voice backstops.
+    LabeledGeneration("bad_novel_bland", "villa", "bad", BAD_NOVEL_BLAND,
+                      expect_deterministic={"quality"},
+                      note="bland but NOT on the denylist -> quality misses it (generalization gap)"),
+    # held-out: valid citations, so only the judge can catch the invented terrace.
+    LabeledGeneration("bad_plausible_hallucination", "villa", "bad", BAD_PLAUSIBLE_HALLUCINATION,
+                      judge_failure=True,
+                      expect_judge_flag={"Relax on the private rooftop terrace with panoramic views"},
+                      note="fabricated rooftop terrace; citations valid so judge-only"),
+    LabeledGeneration("bad_incomplete_villa", "villa", "bad", BAD_INCOMPLETE_VILLA,
+                      judge_failure=True,
+                      note="faithful but buries the pool + 4.96/87 social proof (low coverage)"),
 ]
