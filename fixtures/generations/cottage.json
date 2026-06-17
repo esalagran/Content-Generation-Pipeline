@@ -1,0 +1,32 @@
+{
+  "hero_headline": "Cosy stone cottage for two in the Cotswolds countryside",
+  "highlights": [
+    {
+      "text": "Charming one-bedroom cottage in Stow-on-the-Wold",
+      "source_field": "location"
+    },
+    {
+      "text": "Intimate retreat perfect for couples",
+      "source_field": "rental_info"
+    },
+    {
+      "text": "Traditional fireplace for cosy evenings",
+      "source_field": "amenities"
+    },
+    {
+      "text": "Peaceful Cotswolds countryside setting",
+      "source_field": "description"
+    }
+  ],
+  "about_section": "Briar Cottage is a cosy stone cottage nestled in the Cotswolds countryside, located in Stow-on-the-Wold, United Kingdom. This quiet one-bedroom retreat accommodates 2 guests and features 1 bedroom and 1 bathroom. The cottage offers a warm fireplace and broadband internet, combining traditional charm with modern connectivity for a comfortable countryside escape.",
+  "amenity_descriptions": [
+    {
+      "code": "Fireplace",
+      "text": "A traditional fireplace creates a warm and inviting atmosphere for relaxing evenings."
+    },
+    {
+      "code": "InternetBroadband",
+      "text": "Broadband internet access keeps you connected throughout your stay."
+    }
+  ]
+}

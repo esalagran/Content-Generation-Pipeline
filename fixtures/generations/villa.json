@@ -1,0 +1,48 @@
+{
+  "hero_headline": "Seafront villa with private pool steps from Sitges marina",
+  "highlights": [
+    {
+      "text": "Three-bedroom villa sleeping up to 6 guests with 2 bathrooms",
+      "source_field": "rental_info"
+    },
+    {
+      "text": "Private pool and stunning sea views",
+      "source_field": "amenities"
+    },
+    {
+      "text": "Ten-minute walk to the old town",
+      "source_field": "reviews"
+    },
+    {
+      "text": "Rated 4.96 out of 5 by 87 guests",
+      "source_field": "average_review_score"
+    },
+    {
+      "text": "Steps from the marina in Sitges, Spain",
+      "source_field": "location"
+    }
+  ],
+  "about_section": "Casa del Mar is a bright three-bedroom villa located steps from the marina in Sitges, Spain. This seafront property accommodates up to 6 guests across 3 bedrooms and 2 bathrooms, with a private pool and sea views. Guests can walk to the old town in ten minutes, making it an ideal base for exploring the area.",
+  "amenity_descriptions": [
+    {
+      "code": "PrivatePool",
+      "text": "Enjoy your own private swimming pool with spotless maintenance throughout your stay."
+    },
+    {
+      "code": "AirConditioning",
+      "text": "Air conditioning keeps the villa comfortable even during the warmest summer months."
+    },
+    {
+      "code": "InternetBroadband",
+      "text": "Stay connected with high-speed broadband internet access throughout the property."
+    },
+    {
+      "code": "FreeParking",
+      "text": "Complimentary parking is available on-site for your convenience."
+    },
+    {
+      "code": "DishWasher",
+      "text": "A dishwasher in the kitchen makes cleanup effortless after meals."
+    }
+  ]
+}
