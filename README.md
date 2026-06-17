@@ -84,6 +84,8 @@ this binding is what makes grounding mechanically checkable.
   review — all marked *contradicted*).
 - Judge vs human gold set (n=13): **recall 100%, precision 71%** — it over-flags two
   legitimate claims ("high-speed broadband", "air conditioning throughout").
+- Brand-voice (`model_graded_qa`) grades aren't summarized here; they live per-sample
+  in the `generation_eval` log — view them with `inspect view --log-dir logs`.
 
 The eval also caught **a bug in my own code**: the grounding corpus initially
 omitted `rental_info` and review counts, so the judge marked valid claims

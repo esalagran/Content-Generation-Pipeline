@@ -22,7 +22,7 @@ from .fixtures import META_GENERATIONS, PROPERTIES
 from .grounding import CitationValidityCheck, QualityCheck
 from .prompt import build_system, build_user
 from .scorers import (
-    _check_score_fn,
+    check_score_fn,
     brand_voice_scorer,
     citation_validity_scorer,
     faithfulness_scorer,
@@ -116,7 +116,7 @@ def _meta_scorer(check_cls, name: str):
 
     @scorer(name=f"meta_{name}", metrics=[detection_rate(name), false_positive_rate()])
     def s():
-        return _check_score_fn(check_cls)
+        return check_score_fn(check_cls)
 
     return s()
 

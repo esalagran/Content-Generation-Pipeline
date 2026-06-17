@@ -117,6 +117,9 @@ GOOD_VILLA = GeneratedContent(
     ],
 )
 
+# Clean *deterministically* (Fireplace is a valid amenity code, lengths/counts ok),
+# but the "wood-burning" detail isn't in the data — a judge-detectable over-claim.
+# So this doubles as a good-copy FP test AND a judge true-positive (see goldset.py).
 GOOD_COTTAGE = GeneratedContent(
     hero_headline="Cosy stone cottage for two in the Cotswolds",
     highlights=[
@@ -189,7 +192,8 @@ BAD_WRONG_NUMBER = GeneratedContent(
 
 META_GENERATIONS: list[LabeledGeneration] = [
     LabeledGeneration("good_villa", "villa", "good", GOOD_VILLA, note="clean grounded copy"),
-    LabeledGeneration("good_cottage", "cottage", "good", GOOD_COTTAGE, note="clean sparse copy"),
+    LabeledGeneration("good_cottage", "cottage", "good", GOOD_COTTAGE,
+                      note="deterministically clean; carries one judge-only over-claim"),
     LabeledGeneration("bad_unlisted_amenity", "villa", "bad", BAD_UNLISTED_AMENITY,
                       expect_deterministic={"citation_validity"}, note="amenity code not in input"),
     LabeledGeneration("bad_empty_citation", "cottage", "bad", BAD_EMPTY_CITATION,

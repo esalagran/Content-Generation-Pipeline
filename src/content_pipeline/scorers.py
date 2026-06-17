@@ -40,7 +40,7 @@ def _property(state: TaskState) -> PropertyData:
     return PropertyData.model_validate(state.metadata["property"])
 
 
-def _check_score_fn(check_cls: type[GroundingCheck]):
+def check_score_fn(check_cls: type[GroundingCheck]):
     async def score(state: TaskState, target: Target) -> Score:
         prop = _property(state)
         try:
@@ -59,12 +59,12 @@ def _check_score_fn(check_cls: type[GroundingCheck]):
 
 @scorer(name="citation_validity", metrics=[accuracy(), stderr()])
 def citation_validity_scorer():
-    return _check_score_fn(CitationValidityCheck)
+    return check_score_fn(CitationValidityCheck)
 
 
 @scorer(name="quality", metrics=[accuracy(), stderr()])
 def quality_scorer():
-    return _check_score_fn(QualityCheck)
+    return check_score_fn(QualityCheck)
 
 
 # --- LLM judge: atomic-claim faithfulness (the grounding centerpiece) ---
@@ -103,21 +103,25 @@ def _judge_user(corpus: str, claims: list[dict]) -> str:
     return f"SOURCE FACTS:\n{corpus}\n\nCLAIMS:\n{listed}"
 
 
-def _parse_verdicts(raw: str, n: int) -> list[str]:
-    """Map judge output to a verdict per claim id; missing -> 'unsupported'."""
+def _parse_verdicts(raw: str, n: int) -> tuple[list[str], int]:
+    """Map judge output to a verdict per claim id; missing -> 'unsupported'.
+    Also returns the number of claims left at the default (judge gave no parseable
+    verdict) so a format regression is visible, not silently scored as unsupported."""
     verdicts = ["unsupported"] * n
+    seen: set[int] = set()
     match = re.search(r"\[.*\]", raw, re.DOTALL)
     if not match:
-        return verdicts
+        return verdicts, n
     try:
         for item in json.loads(match.group(0)):
             i = item.get("id")
             v = item.get("verdict")
             if isinstance(i, int) and 0 <= i < n and v in {"entailed", "contradicted", "unsupported"}:
                 verdicts[i] = v
+                seen.add(i)
     except (json.JSONDecodeError, AttributeError, TypeError):
         pass
-    return verdicts
+    return verdicts, n - len(seen)
 
 
 @scorer(name="faithfulness", metrics=[mean(), stderr()])
@@ -142,7 +146,7 @@ def faithfulness_scorer(grader_model: str | None = None):
             ],
             config=GenerateConfig(temperature=0.0, max_tokens=1500),
         )
-        verdicts = _parse_verdicts(out.completion, len(claims))
+        verdicts, unparsed = _parse_verdicts(out.completion, len(claims))
 
         per_claim = [
             {"claim": c["text"], "field": c["field"], "verdict": v}
@@ -158,7 +162,7 @@ def faithfulness_scorer(grader_model: str | None = None):
                 f"{entailed} entailed, {contradicted} contradicted, "
                 f"{len(claims) - entailed - contradicted} unsupported"
             ),
-            metadata={"verdicts": per_claim},
+            metadata={"verdicts": per_claim, "unparsed": unparsed},
         )
 
     return score
