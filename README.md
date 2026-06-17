@@ -171,7 +171,7 @@ already takes a `grader_model`, so it's a one-line change.
 |---|---|---|
 | `citation_validity` detection / FP | **100% / 0%** | catches every designed citation defect |
 | `quality` detection | **50%** | *by design*: held-out bland negative slips the denylist |
-| `judge_detection_rate` | **100%** | flags the specific planted claim (incl. a prompt-injection attempt) |
+| `judge_detection_rate` | **100%** | flags the specific planted claim on each judge-only fixture (fabricated landmark, wrong guest count, invented terrace) |
 | `judge_false_positive_rate` | **~13%** | over-flags grounded amenity flourishes (real calibration debt) |
 | `judge_error_rate` | **0%** | no infra failures this run |
 | judge-vs-human **Cohen's κ** | **≈ 0.53** | moderate; raw agreement (75%) would have flattered |
@@ -199,9 +199,10 @@ already takes a `grader_model`, so it's a one-line change.
 Scoped out deliberately under a 3–4h budget; I can speak to each:
 - **Judge model ≠ generator** (self-enhancement bias): one-line change, left equal for budget.
 - **Gating coverage & brand voice**: only **faithfulness** is gated (per-claim
-  detection / false-positive metrics). Coverage and brand voice are *reported*
-  (`judge_value_mean`), not gated: no metric yet asserts coverage fired on
-  `BAD_INCOMPLETE_VILLA`. Mirroring the faithfulness pattern is the next step.
+  detection / false-positive metrics). Coverage is *reported* (`judge_value_mean`),
+  not gated: no metric yet asserts it fired on `BAD_INCOMPLETE_VILLA`. Brand voice
+  runs only in `generation_eval` (via `model_graded_qa`) and isn't meta-validated at
+  all. Mirroring the faithfulness gating pattern for both is the next step.
 - **Injection hardening**: the judge corpus concatenates review text as source facts,
   so injection-resistance currently relies on the judge's intelligence (it does catch the
   planted "helipad"); structurally separating trusted fields from untrusted UGC is the fix.
