@@ -13,7 +13,7 @@ from typing import Protocol
 from .models import GeneratedContent, PropertyData
 from .prompt import build_system, build_user, parse_output
 
-DEFAULT_MODEL = "claude-sonnet-4-5"
+DEFAULT_MODEL = "claude-sonnet-4-6"
 MAX_TOKENS = 2048
 
 

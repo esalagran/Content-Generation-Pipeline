@@ -32,10 +32,10 @@ def _decamel(code: str) -> str:
 
 
 def build_corpus(property: PropertyData) -> str:
-    """Normalized union of ALL input: description (HTML-stripped), headline, every
-    review, AND the structured fields (guest counts, review score, amenities decoded
-    from their codes, policies, house rules). A landmark named in a review is
-    grounded. (Reviews are weaker evidence than structured fields — see README.)"""
+    """Lowercased union of all input text the judge checks claims against:
+    description (HTML-stripped), headline, reviews, and the structured fields
+    (guest counts, review score, amenities decoded from their codes, policies,
+    house rules). A fact named only in a review still counts as grounded."""
     p = property
     parts = [
         p.property_name,
@@ -82,12 +82,10 @@ PREMIUM_AMENITIES = {
 
 
 def salient_facts(property: PropertyData) -> list[dict]:
-    """The property's strongest selling points that good copy SHOULD surface.
-
-    Deterministic and deliberately tight (marquee facts only). Coverage = the
-    fraction of these the copy actually uses — recall, the complement of
-    faithfulness's precision: a listing can be perfectly grounded yet bury the
-    pool or the 4.96/87 social proof, and only this catches it."""
+    """The property's strongest selling points that good copy should surface.
+    Coverage = the fraction of these the copy actually uses (recall). A listing can
+    be perfectly grounded yet still bury the pool or the 4.96/87 score; this catches
+    that. Kept deliberately tight (marquee facts only) so full coverage is achievable."""
     p = property
     facts = [
         {"kind": "capacity",
@@ -210,7 +208,7 @@ class QualityCheck(GroundingCheck):
 
     @staticmethod
     def _repeated_trigram(blob: str) -> str | None:
-        # ponytail: naive trigram-frequency heuristic; flags the worst offender.
+        """Return a 3-word phrase repeated 3+ times (the worst offender), else None."""
         words = re.findall(r"[a-z0-9']+", blob)
         counts: dict[str, int] = {}
         for i in range(len(words) - 2):

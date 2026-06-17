@@ -16,8 +16,8 @@ from .models import GeneratedContent, PropertyData
 
 
 class ContentParseError(ValueError):
-    """Raised when the model output cannot be parsed into GeneratedContent.
-    Callers fail the sample with this as the explanation — no retry-to-mask."""
+    """Raised when model output can't be parsed into GeneratedContent. The sample
+    fails with this as the explanation; it is not silently retried."""
 
 
 SYSTEM_PROMPT = """\

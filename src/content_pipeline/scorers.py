@@ -1,10 +1,9 @@
 """Inspect @scorer adapters.
 
 Deterministic scorers wrap the pure checks in grounding.py and need no model, so
-they re-execute fully offline via the replay solver. The judge scorer calls a
-model and emits per-claim verdicts into Score.metadata (round-trips through the
-.eval log — verified in the step-0 spike) so judge-vs-gold is reconstructable
-offline from the committed log.
+they re-execute fully offline via the replay solver. The judge scorers call a model
+and write per-claim verdicts into Score.metadata, so judge-vs-human agreement is
+reconstructable offline from the committed .eval log.
 """
 
 from __future__ import annotations
@@ -79,15 +78,13 @@ def quality_scorer():
 
 
 def atomic_claims(content: GeneratedContent) -> list[dict]:
-    """Decompose generated copy into atomic, individually-checkable statements.
-
-    Decomposition correctness is validated in tests/test_decomposition.py."""
+    """Split generated copy into atomic, individually-checkable statements: the
+    headline, each highlight, each about-section sentence, each amenity description."""
     claims = [{"field": "hero_headline", "text": content.hero_headline}]
     for c in content.highlights:
         claims.append({"field": f"highlight:{c.source_field.value}", "text": c.text})
-    # ponytail: naive sentence split. Decimals are safe ("4.96 by" has no space
-    # after the dot), but abbreviations ("St. Mary") over-split. Upgrade path if it
-    # matters: a real segmenter (spaCy/pysbd). Behaviour pinned in test_decomposition.
+    # Naive sentence split: decimals are safe ("4.96 by" has no space after the dot),
+    # but abbreviations like "St. Mary" over-split (a known limit, pinned in tests).
     for sentence in re.split(r"(?<=[.!?])\s+", content.about_section.strip()):
         if sentence.strip():
             claims.append({"field": "about", "text": sentence.strip()})
@@ -275,10 +272,8 @@ def _faithfulness_score_fn(grader_model: str | None):
 
 @scorer(name="faithfulness", metrics=[judge_value_mean(), judge_error_rate(), stderr()])
 def faithfulness_scorer(grader_model: str | None = None):
-    """Production judge: one call per generation, value = fraction entailed; per-claim
-    verdicts go to Score.metadata so the committed log reconstructs judge-vs-gold
-    offline. (Production would use a judge model != the generator to avoid
-    self-enhancement bias — see README; kept equal here to fit the budget.)"""
+    """Production judge: one call per generation, value = fraction of claims entailed.
+    Pass grader_model to judge with a different model than the generator."""
     return _faithfulness_score_fn(grader_model)
 
 
