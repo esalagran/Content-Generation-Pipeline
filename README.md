@@ -205,8 +205,17 @@ Scoped out deliberately under a 3–4h budget; I can speak to each:
 - **Injection hardening**: the judge corpus concatenates review text as source facts,
   so injection-resistance currently relies on the judge's intelligence (it does catch the
   planted "helipad"); structurally separating trusted fields from untrusted UGC is the fix.
-- **CI regression gating** over `.eval` thresholds, **multilingual**, **image grounding**,
-  and **refusal/truncation handling** are all unaddressed.
+- **CI regression gating**: unaddressed. A fix: wire pass-thresholds over the committed
+  `.eval` runs into the CI job, failing the build when detection, false-positive rate,
+  or κ crosses a tolerance.
+- **Multilingual**: unaddressed. A fix: pick the locale from `location.country`, branch
+  the prompt and judge instructions per language, and add per-locale gold labels.
+- **Image grounding**: unaddressed (`image_urls` is excluded from the corpus). A fix:
+  pass the images to a vision model and add an image-faithfulness scorer so visual
+  claims become checkable.
+- **Refusal / truncation handling**: unaddressed. A fix: detect empty or cut-off output
+  via the model's finish reason and length, and fail the sample with its own signal, the
+  way `judge_error` separates infra failure from a content score of 0.
 - **Statistical power**: n is a *demonstration* size; κ and every rate have very wide CIs,
   and a single annotator (who wrote the judge prompt) means no inter-annotator agreement.
 
