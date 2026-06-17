@@ -39,20 +39,22 @@ GOLD: list[GoldLabel] = [
     # committed claude-sonnet-4-6 run (they must match the logged text verbatim).
     GoldLabel("generation", "villa",
               "Sleeps up to 6 guests across 3 bedrooms and 2 bathrooms.", True),
-    GoldLabel("generation", "villa", "Rated 4.96 out of 5 across 87 guest reviews.", True),
+    GoldLabel("generation", "villa",
+              "Rated 4.96 out of 5 across 87 reviews — guests consistently praise the sea views and spotless pool.",
+              True),
     GoldLabel("generation", "cottage",
-              "Broadband internet keeps you connected throughout your stay.", True),
+              "Stay connected with broadband internet throughout your stay.", True),
     GoldLabel("meta", "good_villa", "Three bedrooms sleeping up to six guests", True),
     GoldLabel("meta", "good_villa", "Rated 4.96 across 87 guest reviews", True),
     # judge over-flags these legitimate claims -> expected human/judge disagreement.
     # The amenity IS in the input list; the judge marks the descriptive flourish
     # 'unsupported' because the embellishment isn't literally in the corpus.
     GoldLabel("generation", "villa",
-              "Enjoy your own private pool, perfect for cooling off in the Spanish sun.",
-              True, "PrivatePool is in amenities; the flourish is over-flagged"),
+              "Free on-site parking means one less thing to worry about on arrival.",
+              True, "FreeParking is in amenities; judge over-flags the descriptive flourish"),
     GoldLabel("generation", "cottage",
-              "Warm up beside a classic fireplace after a day of exploring.",
-              True, "Fireplace is in amenities; the flourish is over-flagged"),
+              "Check in from 4 PM and check out by 10 AM, giving you plenty of time to enjoy the tranquillity of the area.",
+              True, "check-in/out times are in house_rules; judge over-flags the embellishment"),
     GoldLabel("meta", "good_villa", "Air conditioning throughout for warm summers.", True,
               "AC is in amenities and praised in a review"),
 

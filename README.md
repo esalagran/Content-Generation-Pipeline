@@ -175,8 +175,9 @@ already takes a `grader_model`, so it's a one-line change.
 | `judge_false_positive_rate` | **~13%** | over-flags grounded amenity flourishes — real calibration debt |
 | `judge_error_rate` | **0%** | no infra failures this run |
 | judge-vs-human **Cohen's κ** | **≈ 0.53** | moderate; raw agreement (75%) would have flattered |
-| faithfulness (real gens) | villa **0.86** / cottage **0.80** | |
+| faithfulness (real gens) | villa **0.85** / cottage **0.90** | |
 | coverage (real gens) | **100%** | `BAD_INCOMPLETE_VILLA` is the low-coverage case only this catches |
+| deterministic gates on real gens | **pass** | `tests/test_real_generations.py` — FP measured on real output, not just fixtures |
 
 
 ---
@@ -197,8 +198,10 @@ already takes a `grader_model`, so it's a one-line change.
 ## 7. Documented, not built (and why)
 Scoped out deliberately under a 3–4h budget — I can speak to each:
 - **Judge model ≠ generator** (self-enhancement bias) — one-line change, left equal for budget.
-- **Meta-validating brand voice** — faithfulness and coverage are gated; brand voice is
-  still only reported (no gold labels yet).
+- **Gating coverage & brand voice** — only **faithfulness** is gated (per-claim
+  detection / false-positive metrics). Coverage and brand voice are *reported*
+  (`judge_value_mean`), not gated: no metric yet asserts coverage fired on
+  `BAD_INCOMPLETE_VILLA`. Mirroring the faithfulness pattern is the next step.
 - **Injection hardening** — the judge corpus concatenates review text as source facts,
   so injection-resistance currently relies on the judge's intelligence (it does catch the
   planted "helipad"); structurally separating trusted fields from untrusted UGC is the fix.
